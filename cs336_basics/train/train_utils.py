@@ -73,8 +73,8 @@ def load_training_config(path: str) -> TrainingConfig:
     return cfg
 
 # Usage 示例
-model_cfg = load_model_config("configs/model_configs.yaml")
-training_cfg = load_training_config("configs/exp_configs.yaml")
+# model_cfg = load_model_config("configs/model_configs.yaml")
+# training_cfg = load_training_config("configs/exp_configs.yaml")
 
-print(model_cfg)
-print(training_cfg)
+# print(model_cfg)
+# print(training_cfg)

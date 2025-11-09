@@ -7,8 +7,8 @@ import torch.cuda as tc
 import torch.cuda.nvtx as nvtx
 
 
-@nvtx.range("model_forward")
 def model_forward(args):
+    nvtx.range_push("total forward_pass")
     device = "cuda:0" if tc.is_available() else "cpu"
     model_cfg = load_model_config(args.model_cfg_path)
     model = NiuTransformerLM(model_cfg.vocab_size,
