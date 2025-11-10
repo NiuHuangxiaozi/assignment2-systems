@@ -6,7 +6,7 @@ from einops import rearrange, einsum
 
 from jaxtyping import Float, Bool
 from torch import Tensor
-
+import torch.cuda.nvtx as nvtx
 
 from cs336_basics.modules.softmax import NIUsoftmax
 
@@ -24,7 +24,8 @@ class NIUscaled_dot_product_attention(nn.Module):
                 mask = mask.to(Q.device)
                 
                 d_k = Q.shape[-1]
-                dot_product = einsum(Q, K, '... queries d_k, ... keys d_k -> ... queries keys')
+                with nvtx.range("Q @ K^T matrix calculation"):
+                    dot_product = einsum(Q, K, '... queries d_k, ... keys d_k -> ... queries keys')
                 attention_score_matrix = dot_product/torch.sqrt(torch.tensor(d_k, device=dot_product.device))
                 # if mask mask some scores
                 if mask is not None:
@@ -32,8 +33,11 @@ class NIUscaled_dot_product_attention(nn.Module):
                 else:
                     masked_attention_score_matrix = attention_score_matrix
                 
-                softmax_attention_score_matrix = NIUsoftmax()(masked_attention_score_matrix, dim=-1)
-                result = einsum(softmax_attention_score_matrix, V, '... queries keys, ... keys d_v -> ... queries d_v')
+                with nvtx.range("softmax process"):
+                    softmax_attention_score_matrix = NIUsoftmax()(masked_attention_score_matrix, dim=-1)
+                
+                with nvtx.range("softmax_attention_score_matrix @ V sum calculation"):
+                    result = einsum(softmax_attention_score_matrix, V, '... queries keys, ... keys d_v -> ... queries d_v')
                 return result
                 
                 
