@@ -21,10 +21,11 @@ def model_backward():
                              device=device)
     niu_optimizer = NIUAdam(model.parameters(), lr=0.001)
     dummy_data = torch.randint(0, 10000, (10, 256)).to(device)
-    with nvtx.range("model_total_process_pass"):
+    labels = torch.randint(0, 10000, (10,)).to(device)
+    for _ in range(100):
         niu_optimizer.zero_grad()
         logits = model(dummy_data)
-        loss = NIUCrossEntropyLoss()(logits, logits)
+        loss = NIUCrossEntropyLoss()(logits, labels)
         loss.backward()
         niu_optimizer.step()
         torch.cuda.synchronize()

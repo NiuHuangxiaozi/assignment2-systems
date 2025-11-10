@@ -7,6 +7,7 @@ from einops import rearrange
 from torch import Tensor
 from jaxtyping import Float ,Bool, Int
 from typing import Optional
+import torch.cuda.nvtx as nvtx
 
 from cs336_basics.modules.scaled_dot_product_attention import NIUscaled_dot_product_attention
 from cs336_basics.modules.rope import NIURope
@@ -46,9 +47,12 @@ class NIUcausal_multi_head_self_attention(nn.Module):
         
         seq_len = x.shape[-2]
         # 所有的头一起做运算，然后切分就可以了
-        q = self.q_proj(x)
-        k = self.k_proj(x)
-        v = self.v_proj(x)
+        with nvtx.range("q_proj"):
+            q = self.q_proj(x)
+        with nvtx.range("k_proj"):
+            k = self.k_proj(x)
+        with nvtx.range("v_proj"):
+            v = self.v_proj(x)
 
         q = rearrange(q, "... seq_len (head head_dim) -> ... head seq_len head_dim", head = self.num_heads)
         k = rearrange(k, "... seq_len (head head_dim) -> ... head seq_len head_dim", head = self.num_heads)

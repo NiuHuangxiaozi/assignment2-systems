@@ -22,11 +22,10 @@ def model_forward(args):
                              10000,
                              device=device)
     dummy_data = torch.randint(0, 10000, (10, 256)).to(device)
-    for _ in range(100):
-        logits = model(dummy_data)
-    
-    torch.cuda.synchronize()
-    nvtx.range_pop();
+    with nvtx.range("model_forward_pass"):
+        for _ in range(100):
+            logits = model(dummy_data)
+            torch.cuda.synchronize()
     return logits   
 def main():
     parser = argparse.ArgumentParser("test time cost of forward pass and backward pass of transformerLM")

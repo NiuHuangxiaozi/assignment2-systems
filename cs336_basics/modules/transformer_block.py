@@ -1,7 +1,7 @@
 
 import torch
 import torch.nn as nn
-
+import torch.cuda.nvtx as nvtx
 
 from cs336_basics.modules.rmsnorn import NIURMSNorm
 from cs336_basics.modules.causal_multi_head_self_attention import NIUcausal_multi_head_self_attention
@@ -40,17 +40,16 @@ class NiuTransformerblock(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
-        pre_attention_normed_x = self.ln1(x)
+        with nvtx.range("ln1"):
+            pre_attention_normed_x = self.ln1(x)
         
         attention_output = self.attn(pre_attention_normed_x)
         
         x1 = attention_output + x
-        
-        pre_ffn_normed_x = self.ln2(x1)
-        
-        ffn_output = self.ffn(pre_ffn_normed_x)
-        
+        with nvtx.range("ln2"):
+            pre_ffn_normed_x = self.ln2(x1)
+        with nvtx.range("ffn"):
+            ffn_output = self.ffn(pre_ffn_normed_x)
         x2 = ffn_output + x1
-        
         return x2
         

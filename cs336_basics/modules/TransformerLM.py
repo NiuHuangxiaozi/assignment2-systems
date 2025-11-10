@@ -36,13 +36,14 @@ class NiuTransformerLM(nn.Module):
         self.ln_final = NIURMSNorm(d_model, device = device)
         self.lm_head = NIULinear(d_model, vocab_size, device = device)
     
-    @nvtx.range("NiuTransformerLM_forward")
+    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
         with nvtx.range("token_embeddings"):
             x = self.token_embeddings(x)
-        with nvtx.range("layers"):
-            for layer in self.layers:
+            
+        for layer in self.layers:
                 x = layer(x)
         with nvtx.range("ln_final"):
             x = self.ln_final(x)
