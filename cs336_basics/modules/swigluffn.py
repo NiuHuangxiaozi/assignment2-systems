@@ -31,7 +31,6 @@ class NIUSWIGLUFFN(nn.Module):
         assert x.device == self.w1.weight.device
         assert x.device == self.w2.weight.device
         assert x.device == self.w3.weight.device
-        
         a = self.w1(x)
         b = NIUSiLU()(a)
         
