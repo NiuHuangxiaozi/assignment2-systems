@@ -133,5 +133,98 @@ ffn总的激活大小是： 10 * 200 * （2 * 512 + 1344）* 4 / 1024/ 1024 = 18
 有点感慨，我自己写的简单一行代码居然需要申请三次显存。
 
 
+# 十二、Report the timings (or out-of-memory errors) you get for these configurations. At what size do you get out-of-memory errors? Do the accounting for the memory usage of attention in one of the smallest configurations you find that runs out of memory (you can use the equations for memory usage of Transformers from Assignment 1). How does the memory saved for backward change with the sequence length? What would you do to eliminate this memory cost
+当序列长度是16384在我们的4060Ti显卡上面显存爆炸了；
+第二个问题我是没有太读懂，反正就是自己计算的显存占用肯定小于实际显存的占用，下面我可以针对一个操作说明一下：
+```python
+ attention_score_matrix = dot_product/torch.sqrt(torch.tensor(d_k, device=dot_product.device))
+```
+这里首先存储dot_product 需要 4 * B * L * L B的显存大小，torch.sqrt(torch.tensor(d_k, device=dot_product.device)) 这一段也有可能创建了和dot_product
+一样大小的显存，最终为了保存除法结果，我们还得创建attention_score_matrix这个结果张量 4 * B * L * L B 
+所以一共是 3 *  4 * B * L * L B
+
+
+![attention 的前向和后向传播情况](./statics/profile_attention_memory.png)
+```python
+import torch
+import torch.nn as nn
+from einops import rearrange, einsum
+
+from jaxtyping import Float, Bool
+from torch import Tensor
+import torch.cuda.nvtx as nvtx
+
+from cs336_basics.modules.softmax import NIUsoftmax
+
+class NIUscaled_dot_product_attention(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(NIUscaled_dot_product_attention, self).__init__()
+        pass
+    def forward(self,
+                Q: Float[Tensor, "... queries d_k"],
+                K: Float[Tensor, "... keys d_k"],
+                V: Float[Tensor, "... keys d_v"],
+                mask: Bool[Tensor, " ... queries keys"] | None = None)\
+                -> Float[Tensor, " ... queries d_v"]:
+
+                mask = mask.to(Q.device)
+                
+                d_k = Q.shape[-1]
+                with nvtx.range("Q @ K^T matrix calculation"):
+                    dot_product = einsum(Q, K, '... queries d_k, ... keys d_k -> ... queries keys')
+                attention_score_matrix = dot_product/torch.sqrt(torch.tensor(d_k, device=dot_product.device))
+                # if mask mask some scores
+                if mask is not None:
+                    masked_attention_score_matrix = attention_score_matrix.masked_fill_(~mask.bool(), -float('inf'))
+                else:
+                    masked_attention_score_matrix = attention_score_matrix
+                
+                # with nvtx.range("softmax process"):
+                #     softmax_attention_score_matrix = NIUsoftmax()(masked_attention_score_matrix, dim=-1)
+                
+                with nvtx.range("softmax_attention_score_matrix @ V sum calculation"):
+                    result = einsum(masked_attention_score_matrix, V, '... queries keys, ... keys d_v -> ... queries d_v')
+                return result
+```
+上面图片中第二个灰色开始的阶段就是backward开始的阶段。后面三个像闪电一样的东西其实是创建的三个梯度矩阵，从前往后分别是：
+- torch::autograd::generated::BmmBackward0::apply
+- torch::autograd::generated::MaskedFillBackward0::apply
+- torch::autograd::generated::DivBackward0::apply
+
+后向传播主要的显存构成有：模型的参数、模型的梯度、优化器的额外参数（比如adamW的一阶动量和二阶动量）、GPU计算图一级反向传播必要的激活值
+在这个attention的反向计算过程也和上面图片展示的是一模一样的，第一阶段：我们的梯度到达这个attention的时候，首先计算的是V的梯度，
+V的梯度是：
+$$
+\begin{aligned}
+\frac{\partial L}{\partial V} 
+&= \frac{\partial L}{\partial \text{result}} \cdot \frac{\partial \text{result}}{\partial V} \\
+&= \left( \text{masked\_attention\_score\_matrix} \right)^\top \frac{\partial L}{\partial \text{result}}
+\end{aligned}
+这时候需要的显存大头是masked\_attention\_score\_matrix和masked\_attention\_score\_matrix的梯度（因为要进一步反向传播)
+$$
+第二阶段：我们需要经过mask的反向传播，这个时候释放masked_attention_score_matrix的显存，然后重新申请attention_score_matrix的显存，他们是一样大的，mask的反向传播就是没有被masked的保持原样，masked的部分梯度变为0
+
+第三阶段：我们求取的是Q和K的梯度，相关的公式是：
+$$
+\begin{aligned}
+\frac{\partial L}{\partial Q} 
+&= \frac{\partial L}{\partial \text{attention\_score\_matrix}} \cdot \frac{\partial \text{attention\_score\_matrix}}{\partial Q} \\
+&=  \frac{\partial L}{\partial \text{attention\_score\_matrix}} \left( \text{K} \right)
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+\frac{\partial L}{\partial K} 
+&= \frac{\partial L}{\partial \text{attention\_score\_matrix}} \cdot \frac{\partial \text{attention\_score\_matrix}}{\partial K} \\
+&=  \frac{\partial L}{\partial \text{attention\_score\_matrix}}^\top \left( \text{Q} \right)
+\end{aligned}
+$$
+在这一个阶段显存大头是$\frac{\partial L}{\partial \text{attention\_score\_matrix}}$
+
+补充：计算完基础的$QK^\top$之后要进行除法，这个也是反向传播计算梯度，只是梯度是常数。
+
+
+
 
 

@@ -33,11 +33,11 @@ class NIUscaled_dot_product_attention(nn.Module):
                 else:
                     masked_attention_score_matrix = attention_score_matrix
                 
-                with nvtx.range("softmax process"):
-                    softmax_attention_score_matrix = NIUsoftmax()(masked_attention_score_matrix, dim=-1)
+                # with nvtx.range("softmax process"):
+                #     softmax_attention_score_matrix = NIUsoftmax()(masked_attention_score_matrix, dim=-1)
                 
                 with nvtx.range("softmax_attention_score_matrix @ V sum calculation"):
-                    result = einsum(softmax_attention_score_matrix, V, '... queries keys, ... keys d_v -> ... queries d_v')
+                    result = einsum(masked_attention_score_matrix, V, '... queries keys, ... keys d_v -> ... queries d_v')
                 return result
                 
                 

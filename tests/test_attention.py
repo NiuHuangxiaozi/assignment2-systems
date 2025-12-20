@@ -13,14 +13,16 @@ def _attention_and_lse(q, k, v, is_causal=False):
     n_keys = k.shape[-2]
     d = q.shape[-1]
     scale = 1 / (d ** 0.5)
+    q = q.to(torch.float32)
+    k = k.to(torch.float32)
     S = einsum(q, k, '... q d, ... k d -> ... q k') * scale
     if is_causal:
         S = torch.where(
             torch.arange(n_queries, device=S.device)[None, :, None] >= torch.arange(n_keys, device=S.device)[None, None, :],
             S,
-            -1e6
+            float('-inf')
         )
-    P = torch.softmax(S, dim=-1)
+    P = torch.softmax(S, dim=-1).to(v.dtype)
     o = einsum(P, v, '... q k, ... k d -> ... q d')
     L = torch.logsumexp(S, dim=-1)
     return o, L
@@ -32,13 +34,24 @@ def _make_attn_inputs(device=None):
     n_queries = 128
     n_keys = 128
     D = 64
-    q = torch.randn(batch_size, n_queries, D, device=device, requires_grad=True)
-    k = torch.randn(batch_size, n_keys, D, device=device, requires_grad=True)
-    v = torch.randn(batch_size, n_keys, D, device=device, requires_grad=True)
-    do = torch.randn(batch_size, n_queries, D, device=device)
+    q = torch.randn(batch_size, n_queries, D, device=device, requires_grad=True, dtype=torch.float32)
+    # total_elements = batch_size * n_queries * D
+    # q = torch.arange(1, total_elements + 1, dtype=torch.float32, device=device).view(batch_size, n_queries, D).requires_grad_(True)
+    k = torch.randn(batch_size, n_keys, D, device=device, requires_grad=True, dtype=torch.float32)
+    # total_elements = batch_size * n_keys * D
+    # k = torch.arange(1, total_elements + 1, dtype=torch.float32, device=device).view(batch_size, n_keys, D).requires_grad_(True)
+    v = torch.randn(batch_size, n_keys, D, device=device, requires_grad=True, dtype=torch.float32)
+    do = torch.randn(batch_size, n_queries, D, device=device, dtype=torch.float32)
 
     return q, k, v, do
 
+# made by niu
+def load_temp_qkvdo(device=None):
+    q = torch.load("./cs336_systems/flash_attention/temp_qkvdo/q.pt", map_location=device)
+    k = torch.load("./cs336_systems/flash_attention/temp_qkvdo/k.pt", map_location=device)
+    v = torch.load("./cs336_systems/flash_attention/temp_qkvdo/v.pt", map_location=device)
+    do = torch.load("./cs336_systems/flash_attention/temp_qkvdo/do.pt", map_location=device)
+    return q, k, v, do
 
 def _test_flash_forward_pass(impl, device="cpu", is_causal=False):
     q, k, v, _do = _make_attn_inputs(device)
@@ -52,6 +65,8 @@ def _test_flash_forward_pass(impl, device="cpu", is_causal=False):
     l = maybe_ls[0]
 
     o_ref, l_ref = _attention_and_lse(q, k, v, is_causal)
+    print(f"o_ref shape is {o_ref.dtype}")
+    print(f"o shape is {o.dtype}")
 
     torch.testing.assert_close(o, o_ref, rtol=1e-2, atol=1e-2)
     torch.testing.assert_close(l, l_ref, rtol=1e-2, atol=1e-2)
