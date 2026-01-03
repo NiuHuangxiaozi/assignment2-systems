@@ -54,6 +54,7 @@ def _test_DistributedDataParallelIndividualParameters(rank: int, world_size: int
     # Create a DDP model. Note that the weights of this model should
     # match the non-parallel baseline above.
     ddp_base = deepcopy(non_parallel_model)
+    # print(ddp_base)
     ddp_model = get_ddp_individual_parameters(ddp_base)
 
     # If we're on rank 0, the DDP model should still exactly match the parameters of the
